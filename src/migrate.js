@@ -1,7 +1,7 @@
 import { shopifyRest, findBlogIdByHandle, listArticlesPaged, getArticle, getArticleMetafields, createArticle, createMetafieldForArticle } from './shopify.js';
-import { splitBody, rewriteDomains, partTitle, externalIdFor } from './utils.js';
+import { splitBody, rewriteDomains, partTitle, externalIdFor, matchesPattern } from './utils.js';
 
-export default async function migrate(config, { onlyIds = [] } = {}) {
+export default async function migrate(config, { onlyIds = [], pattern = null } = {}) {
   const src = shopifyRest(config.source.shop, config.source.token, config.source.apiVersion);
   src.shop = config.source.shop; src.token = config.source.token; src.apiVersion = config.source.apiVersion;
 
@@ -12,9 +12,15 @@ export default async function migrate(config, { onlyIds = [] } = {}) {
   const targetBlogId = await findBlogIdByHandle(tgt, config.target.blogHandle);
 
   const articles = await listArticlesPaged(src, sourceBlogId);
-  const toProcess = onlyIds.length ? articles.filter(a => onlyIds.includes(String(a.id))) : articles;
 
-  console.log(`Found ${articles.length} articles; processing ${toProcess.length}.`);
+  let toProcess = articles;
+  if (onlyIds.length) {
+    toProcess = articles.filter(a => onlyIds.includes(String(a.id)));
+  } else if (pattern) {
+    toProcess = articles.filter(a => matchesPattern(a.title, pattern));
+  }
+
+  console.log(`Found ${articles.length} articles; processing ${toProcess.length}${pattern ? ` (pattern: "${pattern}")` : ''}.`);
 
   for (const a of toProcess) {
     console.log(`\n→ Migrating article #${a.id} \"${a.title}\"`);

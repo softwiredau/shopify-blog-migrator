@@ -21,3 +21,14 @@ export function partTitle(base, part, fmt) {
 export function externalIdFor(sourceArticleId) {
   return `migrated:article:${sourceArticleId}`;
 }
+
+export function matchesPattern(text, pattern) {
+  if (!pattern) return true;
+  // Convert wildcard pattern to regex
+  // Escape special regex chars except *
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+  // Replace * with .* for wildcard matching
+  const regexPattern = '^' + escaped.replace(/\*/g, '.*') + '$';
+  const regex = new RegExp(regexPattern, 'i'); // case-insensitive
+  return regex.test(text);
+}

@@ -97,6 +97,26 @@ npm run migrate -- --only 1234567890,1234567891
 
 You can find article IDs in your Shopify admin URL when editing an article.
 
+### Bulk Migration with Patterns
+
+Migrate articles matching a wildcard pattern (case-insensitive):
+
+```bash
+# Migrate all articles starting with "2024-"
+npm run migrate -- --pattern "2024-*"
+
+# Migrate all articles containing "Tutorial"
+npm run migrate -- --pattern "*Tutorial*"
+
+# Migrate articles with specific prefix and suffix
+npm run migrate -- --pattern "How to*Guide"
+
+# Dry run with pattern to preview matches
+DRY_RUN=true npm run migrate -- --pattern "Product*"
+```
+
+Pattern matching uses `*` as a wildcard to match any characters.
+
 ## Configuration Options
 
 | Variable | Description | Default |
