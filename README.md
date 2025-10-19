@@ -130,16 +130,23 @@ Pattern matching uses `*` as a wildcard to match any characters.
 
 ## How It Works
 
-1. Connects to source store and fetches all articles from specified blog
+1. Connects to source store and fetches all articles from specified blog (with pagination)
 2. For each article:
-   - Retrieves full content and metafields
+   - Retrieves full content and all metafields (paginated)
    - Applies domain rewriting (if configured)
-   - Splits body content if it exceeds `MAX_BODY_CHARS`
+   - Splits body content at safe HTML tag boundaries if it exceeds `MAX_BODY_CHARS`
    - Creates article(s) in target blog with `external_id` tracking
-   - Copies all metafields to new article(s)
+   - Copies metafields to new article (first part only for multi-part articles)
 3. Multi-part articles are tagged with `external_id: migrated:article:{sourceId}:part:{n}`
+4. Rate limiting and automatic retry handling for Shopify API limits
+5. Per-article error handling with migration summary at the end
 
-**Note:** Running the migration multiple times will create duplicate articles. There is no deduplication logic.
+**Important Notes:**
+
+- Running the migration multiple times will create duplicate articles (no deduplication)
+- Metafields are only copied to the first part of split articles to avoid duplication
+- HTML splitting respects tag boundaries to prevent broken markup
+- Failed articles don't stop the migration - a summary is shown at the end
 
 ## Testing Recommendations
 
@@ -174,8 +181,9 @@ Before running a full migration:
 
 **Rate limiting:**
 
-- Shopify Admin API has rate limits (40 requests/second)
-- The tool respects these limits automatically via axios
+- Shopify Admin API has rate limits (2 requests/second)
+- The tool automatically throttles requests to ~2 req/sec and retries on 429 errors
+- Server errors (5xx) are also automatically retried up to 5 times
 
 ## License
 
