@@ -8,8 +8,8 @@ const headers = (token) => ({
 });
 
 // Rate limiter: Shopify Admin API allows 2 requests/second (40 requests/20 seconds)
-// We use a more conservative 1.5 req/sec to avoid hitting limits
-const rateLimiter = pLimit(2);
+// Use pLimit(1) to serialize requests, combined with 500ms delay = strict 2 req/sec
+const rateLimiter = pLimit(1);
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 

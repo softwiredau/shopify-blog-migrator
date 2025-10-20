@@ -132,7 +132,17 @@ function splitLargeNode(node, maxChars) {
 
       // Special handling for text nodes - split and wrap each chunk
       if (clonedChild.nodeName === '#text') {
-        const textChunks = splitTextContent(clonedChild.value, maxChars - tagOverhead);
+        // Guard against negative budget from large tag overhead
+        const textBudget = maxChars - tagOverhead;
+        if (textBudget <= 0) {
+          throw new Error(
+            `Element tag overhead (${tagOverhead} chars) exceeds MAX_BODY_CHARS (${maxChars}). ` +
+            `Cannot split text content. Increase MAX_BODY_CHARS or reduce element attributes. ` +
+            `Element: <${node.nodeName}>`
+          );
+        }
+
+        const textChunks = splitTextContent(clonedChild.value, textBudget);
         for (let i = 0; i < textChunks.length; i++) {
           const textNode = { nodeName: '#text', value: textChunks[i] };
           const isFirstChunkSoFar = chunks.length === 0;
