@@ -1,69 +1,85 @@
+import * as parse5 from 'parse5';
+
 /**
- * Splits HTML content into chunks while preserving tag boundaries.
- * Only splits on top-level block elements that don't break container hierarchies.
+ * Splits HTML content into chunks while preserving valid, self-contained markup.
+ * Uses HTML parsing to ensure opening and closing tags are balanced in each chunk.
  */
 export function splitBody(bodyHtml, maxChars) {
   if (!bodyHtml || bodyHtml.length <= maxChars) return [bodyHtml];
 
-  // Safe split points: only self-contained block elements (case-insensitive)
-  // Avoid splitting within lists, tables, or other container structures
-  const safeSplitTags = [
-    '</div>',
-    '</p>',
-    '</section>',
-    '</article>',
-    '</h1>', '</h2>', '</h3>', '</h4>', '</h5>', '</h6>',
-    '</blockquote>',
-    '</pre>',
-    '</figure>',
-    '</header>',
-    '</footer>',
-    '</main>',
-    '</aside>',
-    '</nav>'
-  ];
-
-  const chunks = [];
-  let remaining = bodyHtml;
-
-  while (remaining.length > 0) {
-    if (remaining.length <= maxChars) {
-      chunks.push(remaining);
-      break;
-    }
-
-    // Find the best split point within maxChars
-    let bestSplit = -1;
-
-    // Look backwards from maxChars to find a safe closing tag (case-insensitive)
-    const searchText = remaining.substring(0, maxChars);
-    const lowerSearchText = searchText.toLowerCase();
-
-    for (const tag of safeSplitTags) {
-      const lastIndex = lowerSearchText.lastIndexOf(tag);
-      if (lastIndex > bestSplit) {
-        bestSplit = lastIndex + tag.length;
-      }
-    }
-
-    // If no safe block tag found, try to at least split at a tag boundary
-    if (bestSplit === -1) {
-      const lastTagClose = searchText.lastIndexOf('>');
-      if (lastTagClose > maxChars * 0.5) { // Only use if reasonably close to maxChars
-        bestSplit = lastTagClose + 1;
-      } else {
-        // Last resort: split at maxChars but warn
-        console.warn(`⚠️  Warning: Splitting HTML at character boundary (no safe tag found within ${maxChars} chars)`);
-        console.warn(`⚠️  Consider increasing MAX_BODY_CHARS or manually splitting this article`);
-        bestSplit = maxChars;
-      }
-    }
-
-    chunks.push(remaining.substring(0, bestSplit));
-    remaining = remaining.substring(bestSplit);
+  // Parse HTML into a DOM tree
+  let document;
+  try {
+    document = parse5.parse(bodyHtml);
+  } catch (e) {
+    console.warn(`⚠️  Warning: Failed to parse HTML (${e.message}). Returning as single chunk.`);
+    return [bodyHtml];
   }
 
-  return chunks;
+  // Extract body content (parse5 creates html>head>body structure)
+  const htmlNode = document.childNodes.find(n => n.nodeName === 'html');
+  const bodyNode = htmlNode?.childNodes?.find(n => n.nodeName === 'body');
+
+  if (!bodyNode || !bodyNode.childNodes) {
+    // No valid body structure, return as-is
+    return [bodyHtml];
+  }
+
+  const chunks = [];
+  let currentChunk = [];
+  let currentSize = 0;
+
+  // Process top-level nodes
+  for (const node of bodyNode.childNodes) {
+    const nodeHtml = parse5.serialize({ nodeName: 'div', childNodes: [node] })
+      .replace(/^<div>/, '')
+      .replace(/<\/div>$/, '');
+    const nodeSize = nodeHtml.length;
+
+    // If this single node exceeds maxChars, we have a problem
+    if (nodeSize > maxChars) {
+      // Flush current chunk if any
+      if (currentChunk.length > 0) {
+        chunks.push(serializeNodes(currentChunk));
+        currentChunk = [];
+        currentSize = 0;
+      }
+
+      console.warn(`⚠️  Warning: Single HTML element exceeds MAX_BODY_CHARS (${nodeSize} > ${maxChars})`);
+      console.warn(`⚠️  This element will be included as-is. Consider increasing MAX_BODY_CHARS.`);
+      chunks.push(nodeHtml);
+      continue;
+    }
+
+    // If adding this node would exceed limit, flush current chunk
+    if (currentSize + nodeSize > maxChars && currentChunk.length > 0) {
+      chunks.push(serializeNodes(currentChunk));
+      currentChunk = [];
+      currentSize = 0;
+    }
+
+    // Add node to current chunk
+    currentChunk.push(node);
+    currentSize += nodeSize;
+  }
+
+  // Flush remaining chunk
+  if (currentChunk.length > 0) {
+    chunks.push(serializeNodes(currentChunk));
+  }
+
+  return chunks.length > 0 ? chunks : [bodyHtml];
+}
+
+/**
+ * Serialize an array of parse5 nodes to HTML string
+ */
+function serializeNodes(nodes) {
+  const fragment = {
+    nodeName: '#document-fragment',
+    childNodes: nodes
+  };
+  return parse5.serialize(fragment);
 }
 
 export function rewriteDomains(html, fromDomain, toDomain) {

@@ -53,11 +53,12 @@ npm run migrate -- --pattern "*Tutorial*"
 **Key Implementation Details:**
 
 - **Pagination:** Uses Link header `rel="next"` with `page_info` cursor for both articles and metafields (shopify.js)
-- **HTML-aware splitting:** Splits at block-level tag boundaries to preserve valid markup; warns if no safe split point found (utils.js:5-50)
+- **HTML-aware splitting:** Uses parse5 to parse HTML and split at top-level element boundaries, ensuring each chunk has balanced tags (utils.js:7-72)
 - **Rate limiting:** 500ms delay between requests (~2 req/sec) with automatic retry on 429/5xx errors using p-retry (shopify.js:16-38)
 - **Article splitting:** Multi-part articles get `external_id: migrated:article:{sourceId}:part:{n}` and modified titles using TITLE_PART_SUFFIX template
 - **Metafield migration:** Only copied to first part of multi-part articles to avoid duplication (migrate.js:71)
 - **Error handling:** Per-article try/catch with migration summary showing succeeded/failed counts (migrate.js:94-119)
+- **Config validation:** MAX_BODY_CHARS validated as positive integer at startup to prevent NaN/infinite loops (config.js:6-14)
 - **No deduplication:** Running migration multiple times creates duplicate articles (uses external_id for tracking but doesn't check for existing)
 
 ## Configuration
