@@ -124,7 +124,8 @@ function splitLargeNode(node, maxChars) {
     if (tagOverhead + childSize > maxChars) {
       // Flush current children if any
       if (currentChildren.length > 0) {
-        chunks.push(wrapInParentTag(node, currentChildren));
+        const isFirstChunkSoFar = chunks.length === 0;
+        chunks.push(wrapInParentTag(node, currentChildren, isFirstChunkSoFar));
         currentChildren = [];
         currentSize = 0;
       }
@@ -132,17 +133,19 @@ function splitLargeNode(node, maxChars) {
       // Special handling for text nodes - split and wrap each chunk
       if (clonedChild.nodeName === '#text') {
         const textChunks = splitTextContent(clonedChild.value, maxChars - tagOverhead);
-        for (const textChunk of textChunks) {
-          const textNode = { nodeName: '#text', value: textChunk };
-          chunks.push(wrapInParentTag(node, [textNode]));
+        for (let i = 0; i < textChunks.length; i++) {
+          const textNode = { nodeName: '#text', value: textChunks[i] };
+          const isFirstChunkSoFar = chunks.length === 0;
+          chunks.push(wrapInParentTag(node, [textNode], isFirstChunkSoFar));
         }
       } else {
         // Recursively split this oversized element
         const subChunks = splitLargeNode(clonedChild, maxChars);
         // Wrap each subchunk in the parent tag to preserve structure
-        for (const subChunk of subChunks) {
-          const fragment = parse5.parseFragment(subChunk);
-          chunks.push(wrapInParentTag(node, fragment.childNodes));
+        for (let i = 0; i < subChunks.length; i++) {
+          const fragment = parse5.parseFragment(subChunks[i]);
+          const isFirstChunkSoFar = chunks.length === 0;
+          chunks.push(wrapInParentTag(node, fragment.childNodes, isFirstChunkSoFar));
         }
       }
       continue;
@@ -150,7 +153,8 @@ function splitLargeNode(node, maxChars) {
 
     // If adding this child would exceed limit, flush current group
     if (tagOverhead + currentSize + childSize > maxChars && currentChildren.length > 0) {
-      chunks.push(wrapInParentTag(node, currentChildren));
+      const isFirstChunkSoFar = chunks.length === 0;
+      chunks.push(wrapInParentTag(node, currentChildren, isFirstChunkSoFar));
       currentChildren = [];
       currentSize = 0;
     }
@@ -161,7 +165,8 @@ function splitLargeNode(node, maxChars) {
 
   // Flush remaining children
   if (currentChildren.length > 0) {
-    chunks.push(wrapInParentTag(node, currentChildren));
+    const isFirstChunkSoFar = chunks.length === 0;
+    chunks.push(wrapInParentTag(node, currentChildren, isFirstChunkSoFar));
   }
 
   return chunks;
@@ -206,13 +211,32 @@ function splitTextContent(text, maxChars) {
 
 /**
  * Wrap child nodes in a parent tag (preserving attributes)
+ * @param {Object} parentNode - The parent node to replicate
+ * @param {Array} childNodes - Child nodes to wrap
+ * @param {boolean} isFirstChunk - Whether this is the first chunk (keeps unique IDs)
  */
-function wrapInParentTag(parentNode, childNodes) {
-  // Create a clone of parent with only the specified children
+function wrapInParentTag(parentNode, childNodes, isFirstChunk = true) {
+  // Attributes that must be unique and should only appear in first chunk
+  const uniqueAttrNames = new Set([
+    'id',
+    'data-bloggle-section-id',
+    'data-component-id',
+    'data-section-id',
+    'data-block-id'
+  ]);
+
+  // Filter attributes based on whether this is the first chunk
+  let filteredAttrs = parentNode.attrs || [];
+  if (!isFirstChunk) {
+    // For subsequent chunks, remove unique identifier attributes
+    filteredAttrs = filteredAttrs.filter(attr => !uniqueAttrNames.has(attr.name));
+  }
+
+  // Create a clone of parent with filtered attributes and specified children
   const wrapper = {
     nodeName: parentNode.nodeName,
     tagName: parentNode.tagName,
-    attrs: parentNode.attrs || [],
+    attrs: filteredAttrs,
     childNodes: childNodes
   };
 
