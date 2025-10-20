@@ -83,21 +83,45 @@ export function splitBody(bodyHtml, maxChars) {
 function splitLargeNode(node, maxChars) {
   const nodeHtml = serializeNodes([node]);
 
-  // If node has no children, we can't split it further
+  // If node has no children, we need special handling
   if (!node.childNodes || node.childNodes.length === 0) {
-    // Check if this is a text node
-    if (node.nodeName === '#text') {
-      console.warn(`⚠️  Warning: Text content exceeds MAX_BODY_CHARS (${nodeHtml.length} > ${maxChars})`);
-      console.warn(`⚠️  Text will be split at character boundaries. Formatting may be affected.`);
-      // Split text into chunks at word boundaries if possible
-      return splitTextContent(node.value, maxChars);
-    }
-
     // Empty or self-closing element that's too large
     console.warn(`⚠️  Warning: Atomic HTML element exceeds MAX_BODY_CHARS (${nodeHtml.length} > ${maxChars})`);
     console.warn(`⚠️  This element cannot be split further. Consider increasing MAX_BODY_CHARS.`);
     console.warn(`⚠️  Element: ${node.nodeName}`);
     return [nodeHtml];
+  }
+
+  // Special case: element with only text node children
+  const hasOnlyTextChildren = node.childNodes.every(child => child.nodeName === '#text');
+  if (hasOnlyTextChildren && nodeHtml.length > maxChars) {
+    // Calculate tag overhead
+    const openingTag = nodeHtml.substring(0, nodeHtml.indexOf('>') + 1);
+    const closingTag = `</${node.nodeName}>`;
+    const tagOverhead = openingTag.length + closingTag.length;
+
+    // Extract combined text content
+    const textContent = node.childNodes.map(child => child.value || '').join('');
+
+    // Guard against negative budget
+    const textBudget = maxChars - tagOverhead;
+    if (textBudget <= 0) {
+      throw new Error(
+        `Element tag overhead (${tagOverhead} chars) exceeds MAX_BODY_CHARS (${maxChars}). ` +
+        `Cannot split text content. Increase MAX_BODY_CHARS or reduce element attributes. ` +
+        `Element: <${node.nodeName}>`
+      );
+    }
+
+    // Split text and wrap each chunk in the element
+    const textChunks = splitTextContent(textContent, textBudget);
+    const chunks = [];
+    for (let i = 0; i < textChunks.length; i++) {
+      const textNode = { nodeName: '#text', value: textChunks[i] };
+      const isFirstChunk = i === 0;
+      chunks.push(wrapInParentTag(node, [textNode], isFirstChunk));
+    }
+    return chunks;
   }
 
   // Element has children - split on child boundaries
@@ -130,7 +154,7 @@ function splitLargeNode(node, maxChars) {
         currentSize = 0;
       }
 
-      // Special handling for text nodes - split and wrap each chunk
+      // Special case: if child is a text node, split it at text level
       if (clonedChild.nodeName === '#text') {
         // Guard against negative budget from large tag overhead
         const textBudget = maxChars - tagOverhead;
@@ -148,15 +172,17 @@ function splitLargeNode(node, maxChars) {
           const isFirstChunkSoFar = chunks.length === 0;
           chunks.push(wrapInParentTag(node, [textNode], isFirstChunkSoFar));
         }
-      } else {
-        // Recursively split this oversized element
-        const subChunks = splitLargeNode(clonedChild, maxChars);
-        // Wrap each subchunk in the parent tag to preserve structure
-        for (let i = 0; i < subChunks.length; i++) {
-          const fragment = parse5.parseFragment(subChunks[i]);
-          const isFirstChunkSoFar = chunks.length === 0;
-          chunks.push(wrapInParentTag(node, fragment.childNodes, isFirstChunkSoFar));
-        }
+        continue;
+      }
+
+      // For element children: recursively split while preserving the child wrapper
+      const subChunks = splitLargeNode(clonedChild, maxChars);
+
+      // Wrap each subchunk in the parent tag to preserve structure
+      for (let i = 0; i < subChunks.length; i++) {
+        const fragment = parse5.parseFragment(subChunks[i]);
+        const isFirstChunkSoFar = chunks.length === 0;
+        chunks.push(wrapInParentTag(node, fragment.childNodes, isFirstChunkSoFar));
       }
       continue;
     }
