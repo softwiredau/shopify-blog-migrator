@@ -2,3 +2,14 @@ node_modules/
 .env
 .DS_Store
 npm-debug.log*
+
+# IDE configuration
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Project-specific (for contributors using Claude Code)
+CLAUDE.md
+.claude/
