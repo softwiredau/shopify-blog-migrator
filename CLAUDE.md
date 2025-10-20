@@ -53,7 +53,7 @@ npm run migrate -- --pattern "*Tutorial*"
 **Key Implementation Details:**
 
 - **Pagination:** Uses Link header `rel="next"` with `page_info` cursor for both articles and metafields (shopify.js)
-- **HTML-aware splitting:** Uses parse5 to parse HTML and split at top-level element boundaries, ensuring each chunk has balanced tags (utils.js:7-72)
+- **HTML-aware splitting:** Uses parse5 with recursive splitting algorithm to handle nested layouts; splits large nodes on child boundaries while preserving parent wrappers and attributes (utils.js:8-163)
 - **Rate limiting:** 500ms delay between requests (~2 req/sec) with automatic retry on 429/5xx errors using p-retry (shopify.js:16-38)
 - **Article splitting:** Multi-part articles get `external_id: migrated:article:{sourceId}:part:{n}` and modified titles using TITLE_PART_SUFFIX template
 - **Metafield migration:** Only copied to first part of multi-part articles to avoid duplication (migrate.js:71)

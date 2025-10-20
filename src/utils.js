@@ -3,6 +3,7 @@ import * as parse5 from 'parse5';
 /**
  * Splits HTML content into chunks while preserving valid, self-contained markup.
  * Uses HTML parsing to ensure opening and closing tags are balanced in each chunk.
+ * Recursively splits oversized nodes to meet size limits.
  */
 export function splitBody(bodyHtml, maxChars) {
   if (!bodyHtml || bodyHtml.length <= maxChars) return [bodyHtml];
@@ -41,7 +42,7 @@ export function splitBody(bodyHtml, maxChars) {
     const clonedFragment = parse5.parseFragment(nodeHtml);
     const clonedNode = clonedFragment.childNodes[0];
 
-    // If this single node exceeds maxChars, we have a problem
+    // If this single node exceeds maxChars, try to split it recursively
     if (nodeSize > maxChars) {
       // Flush current chunk if any
       if (currentChunk.length > 0) {
@@ -50,9 +51,9 @@ export function splitBody(bodyHtml, maxChars) {
         currentSize = 0;
       }
 
-      console.warn(`⚠️  Warning: Single HTML element exceeds MAX_BODY_CHARS (${nodeSize} > ${maxChars})`);
-      console.warn(`⚠️  This element will be included as-is. Consider increasing MAX_BODY_CHARS.`);
-      chunks.push(nodeHtml);
+      // Try to recursively split this oversized node
+      const subChunks = splitLargeNode(clonedNode, maxChars);
+      chunks.push(...subChunks);
       continue;
     }
 
@@ -74,6 +75,91 @@ export function splitBody(bodyHtml, maxChars) {
   }
 
   return chunks.length > 0 ? chunks : [bodyHtml];
+}
+
+/**
+ * Recursively split a large node into smaller chunks by breaking on child boundaries
+ */
+function splitLargeNode(node, maxChars) {
+  const nodeHtml = serializeNodes([node]);
+
+  // If node has no children, we can't split it further - return as-is with warning
+  if (!node.childNodes || node.childNodes.length === 0) {
+    console.warn(`⚠️  Warning: Atomic HTML element exceeds MAX_BODY_CHARS (${nodeHtml.length} > ${maxChars})`);
+    console.warn(`⚠️  This element cannot be split further. Consider increasing MAX_BODY_CHARS.`);
+    console.warn(`⚠️  Element: ${node.nodeName || 'text'}`);
+    return [nodeHtml];
+  }
+
+  // Element has children - split on child boundaries
+  const chunks = [];
+  let currentChildren = [];
+  let currentSize = 0;
+
+  // Calculate overhead of opening/closing tags
+  const openingTag = nodeHtml.substring(0, nodeHtml.indexOf('>') + 1);
+  const closingTag = `</${node.nodeName}>`;
+  const tagOverhead = openingTag.length + closingTag.length;
+
+  for (const child of node.childNodes) {
+    const childHtml = parse5.serialize({ nodeName: 'div', childNodes: [child] })
+      .replace(/^<div>/, '')
+      .replace(/<\/div>$/, '');
+    const childSize = childHtml.length;
+
+    // Clone child to avoid mutation
+    const clonedChildFragment = parse5.parseFragment(childHtml);
+    const clonedChild = clonedChildFragment.childNodes[0];
+
+    // If a single child exceeds limit, recursively split it
+    if (tagOverhead + childSize > maxChars) {
+      // Flush current children if any
+      if (currentChildren.length > 0) {
+        chunks.push(wrapInParentTag(node, currentChildren));
+        currentChildren = [];
+        currentSize = 0;
+      }
+
+      // Recursively split this oversized child
+      const subChunks = splitLargeNode(clonedChild, maxChars);
+      chunks.push(...subChunks);
+      continue;
+    }
+
+    // If adding this child would exceed limit, flush current group
+    if (tagOverhead + currentSize + childSize > maxChars && currentChildren.length > 0) {
+      chunks.push(wrapInParentTag(node, currentChildren));
+      currentChildren = [];
+      currentSize = 0;
+    }
+
+    currentChildren.push(clonedChild);
+    currentSize += childSize;
+  }
+
+  // Flush remaining children
+  if (currentChildren.length > 0) {
+    chunks.push(wrapInParentTag(node, currentChildren));
+  }
+
+  return chunks;
+}
+
+/**
+ * Wrap child nodes in a parent tag (preserving attributes)
+ */
+function wrapInParentTag(parentNode, childNodes) {
+  // Create a clone of parent with only the specified children
+  const wrapper = {
+    nodeName: parentNode.nodeName,
+    tagName: parentNode.tagName,
+    attrs: parentNode.attrs || [],
+    childNodes: childNodes
+  };
+
+  return parse5.serialize({ nodeName: 'div', childNodes: [wrapper] })
+    .replace(/^<div>/, '')
+    .replace(/<\/div>$/, '');
 }
 
 /**
