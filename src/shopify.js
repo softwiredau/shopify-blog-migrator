@@ -77,9 +77,17 @@ export async function listArticlesPaged(api, blogId) {
   const all = [];
   let page_info;
   do {
-    const res = await axios.get(
-      `https://${api.shop}/admin/api/${api.apiVersion}/blogs/${blogId}/articles.json`,
-      { headers: headers(api.token), params: { limit: 250, page_info } }
+    const res = await rateLimiter(() =>
+      retryableRequest(
+        async () => {
+          const response = await axios.get(
+            `https://${api.shop}/admin/api/${api.apiVersion}/blogs/${blogId}/articles.json`,
+            { headers: headers(api.token), params: { limit: 250, page_info } }
+          );
+          return response;
+        },
+        `GET /blogs/${blogId}/articles.json`
+      )
     );
     const items = res.data.articles || [];
     all.push(...items);
@@ -99,9 +107,17 @@ export async function getArticleMetafields(api, articleId) {
   const all = [];
   let page_info;
   do {
-    const res = await axios.get(
-      `https://${api.shop}/admin/api/${api.apiVersion}/articles/${articleId}/metafields.json`,
-      { headers: headers(api.token), params: { limit: 250, page_info } }
+    const res = await rateLimiter(() =>
+      retryableRequest(
+        async () => {
+          const response = await axios.get(
+            `https://${api.shop}/admin/api/${api.apiVersion}/articles/${articleId}/metafields.json`,
+            { headers: headers(api.token), params: { limit: 250, page_info } }
+          );
+          return response;
+        },
+        `GET /articles/${articleId}/metafields.json`
+      )
     );
     const items = res.data.metafields || [];
     all.push(...items);
