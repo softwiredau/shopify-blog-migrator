@@ -83,11 +83,20 @@ export function splitBody(bodyHtml, maxChars) {
 function splitLargeNode(node, maxChars) {
   const nodeHtml = serializeNodes([node]);
 
-  // If node has no children, we can't split it further - return as-is with warning
+  // If node has no children, we can't split it further
   if (!node.childNodes || node.childNodes.length === 0) {
+    // Check if this is a text node
+    if (node.nodeName === '#text') {
+      console.warn(`⚠️  Warning: Text content exceeds MAX_BODY_CHARS (${nodeHtml.length} > ${maxChars})`);
+      console.warn(`⚠️  Text will be split at character boundaries. Formatting may be affected.`);
+      // Split text into chunks at word boundaries if possible
+      return splitTextContent(node.value, maxChars);
+    }
+
+    // Empty or self-closing element that's too large
     console.warn(`⚠️  Warning: Atomic HTML element exceeds MAX_BODY_CHARS (${nodeHtml.length} > ${maxChars})`);
     console.warn(`⚠️  This element cannot be split further. Consider increasing MAX_BODY_CHARS.`);
-    console.warn(`⚠️  Element: ${node.nodeName || 'text'}`);
+    console.warn(`⚠️  Element: ${node.nodeName}`);
     return [nodeHtml];
   }
 
@@ -111,7 +120,7 @@ function splitLargeNode(node, maxChars) {
     const clonedChildFragment = parse5.parseFragment(childHtml);
     const clonedChild = clonedChildFragment.childNodes[0];
 
-    // If a single child exceeds limit, recursively split it
+    // If a single child exceeds limit, handle specially
     if (tagOverhead + childSize > maxChars) {
       // Flush current children if any
       if (currentChildren.length > 0) {
@@ -120,9 +129,22 @@ function splitLargeNode(node, maxChars) {
         currentSize = 0;
       }
 
-      // Recursively split this oversized child
-      const subChunks = splitLargeNode(clonedChild, maxChars);
-      chunks.push(...subChunks);
+      // Special handling for text nodes - split and wrap each chunk
+      if (clonedChild.nodeName === '#text') {
+        const textChunks = splitTextContent(clonedChild.value, maxChars - tagOverhead);
+        for (const textChunk of textChunks) {
+          const textNode = { nodeName: '#text', value: textChunk };
+          chunks.push(wrapInParentTag(node, [textNode]));
+        }
+      } else {
+        // Recursively split this oversized element
+        const subChunks = splitLargeNode(clonedChild, maxChars);
+        // Wrap each subchunk in the parent tag to preserve structure
+        for (const subChunk of subChunks) {
+          const fragment = parse5.parseFragment(subChunk);
+          chunks.push(wrapInParentTag(node, fragment.childNodes));
+        }
+      }
       continue;
     }
 
@@ -140,6 +162,43 @@ function splitLargeNode(node, maxChars) {
   // Flush remaining children
   if (currentChildren.length > 0) {
     chunks.push(wrapInParentTag(node, currentChildren));
+  }
+
+  return chunks;
+}
+
+/**
+ * Split text content into chunks, preferring word boundaries
+ */
+function splitTextContent(text, maxChars) {
+  if (!text || text.length <= maxChars) return [text];
+
+  const chunks = [];
+  let remaining = text;
+
+  while (remaining.length > 0) {
+    if (remaining.length <= maxChars) {
+      chunks.push(remaining);
+      break;
+    }
+
+    // Try to split at a word boundary
+    let splitPoint = maxChars;
+    const searchText = remaining.substring(0, maxChars);
+
+    // Look for last space/newline before limit
+    const lastSpace = Math.max(
+      searchText.lastIndexOf(' '),
+      searchText.lastIndexOf('\n'),
+      searchText.lastIndexOf('\t')
+    );
+
+    if (lastSpace > maxChars * 0.7) { // Only use word boundary if it's reasonably close
+      splitPoint = lastSpace + 1; // Include the space in the previous chunk
+    }
+
+    chunks.push(remaining.substring(0, splitPoint));
+    remaining = remaining.substring(splitPoint);
   }
 
   return chunks;
