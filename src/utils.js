@@ -29,12 +29,17 @@ export function splitBody(bodyHtml, maxChars) {
   let currentChunk = [];
   let currentSize = 0;
 
-  // Process top-level nodes
+  // Process top-level nodes - clone each to avoid mutation during serialization
   for (const node of bodyNode.childNodes) {
+    // Serialize to HTML and re-parse to create a deep clone
     const nodeHtml = parse5.serialize({ nodeName: 'div', childNodes: [node] })
       .replace(/^<div>/, '')
       .replace(/<\/div>$/, '');
     const nodeSize = nodeHtml.length;
+
+    // Clone the node by parsing its HTML
+    const clonedFragment = parse5.parseFragment(nodeHtml);
+    const clonedNode = clonedFragment.childNodes[0];
 
     // If this single node exceeds maxChars, we have a problem
     if (nodeSize > maxChars) {
@@ -58,8 +63,8 @@ export function splitBody(bodyHtml, maxChars) {
       currentSize = 0;
     }
 
-    // Add node to current chunk
-    currentChunk.push(node);
+    // Add cloned node to current chunk to avoid mutation
+    currentChunk.push(clonedNode);
     currentSize += nodeSize;
   }
 
